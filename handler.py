@@ -784,24 +784,30 @@ def handler(job):
                                 ) as temp_file:
                                     temp_file.write(image_bytes)
                                     temp_file_path = temp_file.name
-                                print(
-                                    f"worker-comfyui - Wrote image bytes to temporary file: {temp_file_path}"
+                                print(f"worker-comfyui - Uploading {filename} to R2...")
+                                import boto3
+                                from botocore.config import Config
+                                s3 = boto3.client(
+                                    "s3",
+                                    endpoint_url=os.environ["BUCKET_ENDPOINT_URL"],
+                                    aws_access_key_id=os.environ["BUCKET_ACCESS_KEY_ID"],
+                                    aws_secret_access_key=os.environ["BUCKET_SECRET_ACCESS_KEY"],
+                                    region_name="auto",
+                                    config=Config(signature_version="s3v4")
                                 )
-
-                                print(f"worker-comfyui - Uploading {filename} to S3...")
-                                s3_url = rp_upload.upload_image(job_id, temp_file_path)
-                                os.remove(temp_file_path)  # Clean up temp file
-                                print(
-                                    f"worker-comfyui - Uploaded {filename} to S3: {s3_url}"
-                                )
-                                # Append dictionary with filename and URL
-                                output_data.append(
-                                    {
-                                        "filename": filename,
-                                        "type": "s3_url",
-                                        "data": s3_url,
-                                    }
-                                )
+                                bucket = os.environ["BUCKET_NAME"]
+                                folder = os.environ.get("BUCKET_FOLDER", "generated")
+                                key = f"{folder}/{uuid.uuid4().hex}{file_extension}"
+                                s3.upload_file(temp_file_path, bucket, key)
+                                os.remove(temp_file_path)
+                                public_base = os.environ["BUCKET_PUBLIC_URL"].rstrip("/")
+                                s3_url = f"{public_base}/{key}"
+                                print(f"worker-comfyui - Uploaded to R2: {s3_url}")
+                                output_data.append({
+                                    "filename": filename,
+                                    "type": "s3_url",
+                                    "data": s3_url,
+                                })
                             except Exception as e:
                                 error_msg = f"Error uploading {filename} to S3: {e}"
                                 print(f"worker-comfyui - {error_msg}")
